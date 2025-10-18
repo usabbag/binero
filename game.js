@@ -247,6 +247,319 @@ function initializeTestPuzzle() {
 }
 
 // ============================================================================
+// LOGIC-BASED SOLVER - Human-solvable puzzle verification
+// ============================================================================
+
+/**
+ * Technique 1: Two adjacent same values → opposite value on edges
+ * Example: ?11 → 011  or  00? → 001
+ * @returns {boolean} - True if made a change
+ */
+function logicTwoAdjacent() {
+    let madeChange = false;
+
+    // Check rows
+    for (let row = 0; row < GRID_SIZE; row++) {
+        const line = gridState[row];
+        for (let col = 0; col < GRID_SIZE - 1; col++) {
+            if (line[col].value !== 0 && line[col].value === line[col + 1].value) {
+                // Found two adjacent same values
+                const val = line[col].value;
+                const opposite = val === 1 ? 2 : 1;
+
+                // Check left edge
+                if (col > 0 && line[col - 1].value === 0) {
+                    line[col - 1].value = opposite;
+                    madeChange = true;
+                }
+
+                // Check right edge
+                if (col + 2 < GRID_SIZE && line[col + 2].value === 0) {
+                    line[col + 2].value = opposite;
+                    madeChange = true;
+                }
+            }
+        }
+    }
+
+    // Check columns
+    for (let col = 0; col < GRID_SIZE; col++) {
+        for (let row = 0; row < GRID_SIZE - 1; row++) {
+            if (gridState[row][col].value !== 0 &&
+                gridState[row][col].value === gridState[row + 1][col].value) {
+                const val = gridState[row][col].value;
+                const opposite = val === 1 ? 2 : 1;
+
+                // Check top edge
+                if (row > 0 && gridState[row - 1][col].value === 0) {
+                    gridState[row - 1][col].value = opposite;
+                    madeChange = true;
+                }
+
+                // Check bottom edge
+                if (row + 2 < GRID_SIZE && gridState[row + 2][col].value === 0) {
+                    gridState[row + 2][col].value = opposite;
+                    madeChange = true;
+                }
+            }
+        }
+    }
+
+    return madeChange;
+}
+
+/**
+ * Technique 2: Two same values with gap → opposite in middle
+ * Example: 1.1 → 121  or  0.0 → 010
+ * @returns {boolean} - True if made a change
+ */
+function logicTwoSeparated() {
+    let madeChange = false;
+
+    // Check rows
+    for (let row = 0; row < GRID_SIZE; row++) {
+        const line = gridState[row];
+        for (let col = 0; col < GRID_SIZE - 2; col++) {
+            if (line[col].value !== 0 &&
+                line[col].value === line[col + 2].value &&
+                line[col + 1].value === 0) {
+                const opposite = line[col].value === 1 ? 2 : 1;
+                line[col + 1].value = opposite;
+                madeChange = true;
+            }
+        }
+    }
+
+    // Check columns
+    for (let col = 0; col < GRID_SIZE; col++) {
+        for (let row = 0; row < GRID_SIZE - 2; row++) {
+            if (gridState[row][col].value !== 0 &&
+                gridState[row][col].value === gridState[row + 2][col].value &&
+                gridState[row + 1][col].value === 0) {
+                const opposite = gridState[row][col].value === 1 ? 2 : 1;
+                gridState[row + 1][col].value = opposite;
+                madeChange = true;
+            }
+        }
+    }
+
+    return madeChange;
+}
+
+/**
+ * Technique 3: Max count reached → fill remaining with opposite
+ * Example: Row has 3 ones already → fill remaining empties with twos
+ * @returns {boolean} - True if made a change
+ */
+function logicMaxCountReached() {
+    let madeChange = false;
+
+    // Check rows
+    for (let row = 0; row < GRID_SIZE; row++) {
+        const line = gridState[row];
+        const rowValues = line.map(c => c.value);
+
+        if (rowValues.includes(0)) { // Has empties
+            const onesCount = rowValues.filter(v => v === 1).length;
+            const twosCount = rowValues.filter(v => v === 2).length;
+
+            // If we have 3 ones, fill empties with twos
+            if (onesCount === 3) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    if (line[col].value === 0) {
+                        line[col].value = 2;
+                        madeChange = true;
+                    }
+                }
+            }
+
+            // If we have 3 twos, fill empties with ones
+            if (twosCount === 3) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    if (line[col].value === 0) {
+                        line[col].value = 1;
+                        madeChange = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check columns
+    for (let col = 0; col < GRID_SIZE; col++) {
+        const colValues = getColumn(col);
+
+        if (colValues.includes(0)) { // Has empties
+            const onesCount = colValues.filter(v => v === 1).length;
+            const twosCount = colValues.filter(v => v === 2).length;
+
+            // If we have 3 ones, fill empties with twos
+            if (onesCount === 3) {
+                for (let row = 0; row < GRID_SIZE; row++) {
+                    if (gridState[row][col].value === 0) {
+                        gridState[row][col].value = 2;
+                        madeChange = true;
+                    }
+                }
+            }
+
+            // If we have 3 twos, fill empties with ones
+            if (twosCount === 3) {
+                for (let row = 0; row < GRID_SIZE; row++) {
+                    if (gridState[row][col].value === 0) {
+                        gridState[row][col].value = 1;
+                        madeChange = true;
+                    }
+                }
+            }
+        }
+    }
+
+    return madeChange;
+}
+
+/**
+ * Technique 4: Avoid duplicate rows/columns
+ * If partial row would duplicate complete row, fill with opposites
+ * @returns {boolean} - True if made a change
+ */
+function logicAvoidDuplicates() {
+    let madeChange = false;
+
+    // Check rows
+    for (let row1 = 0; row1 < GRID_SIZE; row1++) {
+        const line1 = gridState[row1].map(c => c.value);
+        const empties1 = line1.filter(v => v === 0).length;
+
+        // Only consider rows with exactly 2 empties
+        if (empties1 !== 2) continue;
+
+        // Compare with complete rows
+        for (let row2 = 0; row2 < GRID_SIZE; row2++) {
+            if (row1 === row2) continue;
+
+            const line2 = gridState[row2].map(c => c.value);
+            if (line2.includes(0)) continue; // Skip incomplete rows
+
+            // Check if filled positions match
+            let matches = true;
+            for (let col = 0; col < GRID_SIZE; col++) {
+                if (line1[col] !== 0 && line1[col] !== line2[col]) {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches) {
+                // This row would duplicate row2, fill empties with opposites
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    if (line1[col] === 0) {
+                        const opposite = line2[col] === 1 ? 2 : 1;
+                        gridState[row1][col].value = opposite;
+                        madeChange = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check columns
+    for (let col1 = 0; col1 < GRID_SIZE; col1++) {
+        const line1 = getColumn(col1);
+        const empties1 = line1.filter(v => v === 0).length;
+
+        // Only consider columns with exactly 2 empties
+        if (empties1 !== 2) continue;
+
+        // Compare with complete columns
+        for (let col2 = 0; col2 < GRID_SIZE; col2++) {
+            if (col1 === col2) continue;
+
+            const line2 = getColumn(col2);
+            if (line2.includes(0)) continue; // Skip incomplete columns
+
+            // Check if filled positions match
+            let matches = true;
+            for (let row = 0; row < GRID_SIZE; row++) {
+                if (line1[row] !== 0 && line1[row] !== line2[row]) {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches) {
+                // This column would duplicate col2, fill empties with opposites
+                for (let row = 0; row < GRID_SIZE; row++) {
+                    if (line1[row] === 0) {
+                        const opposite = line2[row] === 1 ? 2 : 1;
+                        gridState[row][col1].value = opposite;
+                        madeChange = true;
+                    }
+                }
+            }
+        }
+    }
+
+    return madeChange;
+}
+
+/**
+ * Attempt to solve puzzle using only logical deduction (no guessing)
+ * @param {number} maxIterations - Safety limit to prevent infinite loops
+ * @returns {string} - 'solved' | 'stuck' | 'invalid'
+ */
+function solveWithLogic(maxIterations = 100) {
+    const techniques = [
+        logicTwoAdjacent,
+        logicTwoSeparated,
+        logicMaxCountReached,
+        logicAvoidDuplicates
+    ];
+
+    let iterations = 0;
+
+    while (iterations < maxIterations) {
+        let madeProgress = false;
+
+        // Apply all techniques
+        for (const technique of techniques) {
+            if (technique()) {
+                madeProgress = true;
+            }
+        }
+
+        // Check if solved
+        const allFilled = gridState.every(row => row.every(cell => cell.value !== 0));
+        if (allFilled) {
+            // Verify it's valid
+            const violations = findViolatingCells();
+            return violations.size === 0 ? 'solved' : 'invalid';
+        }
+
+        // If no progress made, we're stuck
+        if (!madeProgress) {
+            return 'stuck';
+        }
+
+        iterations++;
+    }
+
+    return 'stuck'; // Hit iteration limit
+}
+
+/**
+ * Check if a puzzle is human-solvable
+ * Makes a copy, attempts logic-based solve, restores original
+ * @returns {boolean} - True if solvable with logic alone
+ */
+function isHumanSolvable() {
+    const saved = copyGridState();
+    const result = solveWithLogic();
+    restoreGridState(saved);
+    return result === 'solved';
+}
+
+// ============================================================================
 // PUZZLE GENERATION - Backtracking Solver & Generator
 // ============================================================================
 
@@ -448,7 +761,7 @@ function generateCompleteGrid() {
 
 /**
  * Generate a solvable puzzle by removing cells from complete grid
- * Ensures puzzle has unique solution
+ * Ensures puzzle has unique solution AND is human-solvable (no guessing)
  * @param {string} difficulty - 'easy', 'medium', or 'hard'
  * @returns {boolean} - True if generation successful
  */
@@ -461,58 +774,80 @@ function generatePuzzle(difficulty = 'medium') {
     };
 
     const numClues = targetClues[difficulty] || targetClues.medium;
+    const maxAttempts = 50; // Try up to 50 puzzles to find a human-solvable one
 
-    // Step 1: Generate complete valid grid
-    console.log('Generating complete grid...');
-    if (!generateCompleteGrid()) {
-        console.error('Failed to generate complete grid');
-        return false;
-    }
+    console.log(`Generating ${difficulty} puzzle (human-solvable)...`);
 
-    // Step 2: Create list of all positions and shuffle
-    const positions = [];
-    for (let row = 0; row < GRID_SIZE; row++) {
-        for (let col = 0; col < GRID_SIZE; col++) {
-            positions.push({ row, col });
-        }
-    }
-    const shuffledPositions = shuffleArray(positions);
-
-    // Step 3: Try removing cells while maintaining uniqueness
-    console.log(`Removing cells to reach ${numClues} clues...`);
-    let currentClues = GRID_SIZE * GRID_SIZE;
-
-    for (const pos of shuffledPositions) {
-        if (currentClues <= numClues) {
-            break;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        // Step 1: Generate complete valid grid
+        if (!generateCompleteGrid()) {
+            console.error('Failed to generate complete grid');
+            continue;
         }
 
-        const { row, col } = pos;
-        const originalValue = gridState[row][col].value;
+        // Step 2: Create list of all positions and shuffle
+        const positions = [];
+        for (let row = 0; row < GRID_SIZE; row++) {
+            for (let col = 0; col < GRID_SIZE; col++) {
+                positions.push({ row, col });
+            }
+        }
+        const shuffledPositions = shuffleArray(positions);
 
-        // Try removing this cell
-        gridState[row][col].value = 0;
+        // Step 3: Try removing cells while maintaining uniqueness
+        let currentClues = GRID_SIZE * GRID_SIZE;
 
-        // Count solutions with this cell removed
-        const numSolutions = countSolutions(0, 0, 2);
+        for (const pos of shuffledPositions) {
+            if (currentClues <= numClues) {
+                break;
+            }
 
-        if (numSolutions === 1) {
-            // Unique solution still exists - keep it removed
-            currentClues--;
+            const { row, col } = pos;
+            const originalValue = gridState[row][col].value;
+
+            // Try removing this cell
+            gridState[row][col].value = 0;
+
+            // Count solutions with this cell removed
+            const numSolutions = countSolutions(0, 0, 2);
+
+            if (numSolutions === 1) {
+                // Unique solution still exists - keep it removed
+                currentClues--;
+            } else {
+                // Multiple solutions or no solution - restore the value
+                gridState[row][col].value = originalValue;
+            }
+        }
+
+        // Step 4: Check if puzzle is human-solvable
+        if (isHumanSolvable()) {
+            // Success! Mark cells as locked and return
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    gridState[row][col].locked = gridState[row][col].value !== 0;
+                }
+            }
+
+            console.log(`✓ Human-solvable puzzle found! (attempt ${attempt}/${maxAttempts})`);
+            console.log(`  Clues: ${currentClues} (target: ${numClues})`);
+            return true;
         } else {
-            // Multiple solutions or no solution - restore the value
-            gridState[row][col].value = originalValue;
+            console.log(`  Attempt ${attempt}: Not human-solvable, trying again...`);
         }
     }
 
-    // Step 4: Mark remaining filled cells as locked
+    // Fallback: If we couldn't find a human-solvable puzzle,
+    // return the last attempt anyway
+    console.warn(`⚠ Could not find human-solvable puzzle in ${maxAttempts} attempts`);
+    console.warn('  Using last generated puzzle (may require guessing)');
+
     for (let row = 0; row < GRID_SIZE; row++) {
         for (let col = 0; col < GRID_SIZE; col++) {
             gridState[row][col].locked = gridState[row][col].value !== 0;
         }
     }
 
-    console.log(`Puzzle generated with ${currentClues} clues (target: ${numClues})`);
     return true;
 }
 
